@@ -1,6 +1,6 @@
 version: 2
-title: Templat competition - Dummy classification
-description: Dummy classification task
+title: Global Cybersecurity Severity Prediction
+description: Predict the severity level (Low, Medium, High, Critical) from the provided features.
 image: logo.png
 registration_auto_approve: False  # if True, do not require approval from admin to join the comp
 
@@ -32,8 +32,8 @@ solutions:
 phases:
   - name: Development Phase
     description: 'Development phase: tune your models.'
-    start: 10-07-2025
-    end: 03-31-2026
+    start: 2026-03-21
+    end: 2026-05-31
     tasks:
       - 0
 
@@ -41,20 +41,12 @@ leaderboards:
   - title: Results
     key: main
     columns:
-      - title: Test Accuracy
+      - title: Macro F1 (Public)
         key: test
         index: 0
-        sorting: asc
-      - title: Private Test Accuracy
+        sorting: desc
+      - title: Macro F1 (Private)
         key: private_test
         index: 1
-        sorting: asc
+        sorting: desc
         hidden: True
-      - title: Train time
-        key: train_time
-        index: 2
-        sorting: desc
-      - title: Test time
-        key: test_time
-        index: 3
-        sorting: desc
