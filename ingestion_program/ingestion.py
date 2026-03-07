@@ -1,92 +1,137 @@
-import json
-import sys
+# ingestion_program/ingestion.py
+import argparse
+import importlib.util
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
-EVAL_SETS = ["test", "private_test"]
+def import_submission(submission_dir: Path):
+    submission_path = submission_dir / "submission.py"
+    if not submission_path.exists():
+        raise FileNotFoundError(f"submission.py not found in: {submission_dir}")
+
+    spec = importlib.util.spec_from_file_location("submission", str(submission_path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore
+    return module
 
 
-def evaluate_model(model, X_test):
-
-    y_pred = model.predict(X_test)
-    return pd.DataFrame(y_pred)
-
-
-def get_train_data(data_dir):
-    data_dir = Path(data_dir)
-    training_dir = data_dir / "train"
-    X_train = pd.read_csv(training_dir / "train_features.csv")
-    y_train = pd.read_csv(training_dir / "train_labels.csv")
-    return X_train, y_train
+def load_features(data_dir: Path, split: str) -> pd.DataFrame:
+    split_dir = data_dir / split
+    path = split_dir / f"{split}_features.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing features file: {path}")
+    return pd.read_csv(path)
 
 
-def main(data_dir, output_dir):
-    # Here, you can import info from the submission module, to evaluate the
-    # submission
-    from submission import get_model
+def load_labels(data_dir: Path, split: str) -> pd.Series:
+    split_dir = data_dir / split
+    path = split_dir / f"{split}_labels.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing labels file: {path}")
 
-    X_train, y_train = get_train_data(data_dir)
+    y_df = pd.read_csv(path)
+    if "label" in y_df.columns:
+        return y_df["label"]
+    return y_df.iloc[:, 0]
 
-    print("Training the model")
 
-    model = get_model()
+def save_predictions(preds, out_path: Path):
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"label": preds}).to_csv(out_path, index=False)
 
-    start = time.time()
-    model.fit(X_train, y_train)
-    train_time = time.time() - start
-    print("-" * 10)
-    print("Evaluate the model")
-    start = time.time()
-    res = {}
-    for eval_set in EVAL_SETS:
-        X_test = pd.read_csv(data_dir / eval_set / f"{eval_set}_features.csv")
-        res[eval_set] = evaluate_model(model, X_test)
-    test_time = time.time() - start
-    print("-" * 10)
-    duration = train_time + test_time
-    print(f"Completed Prediction. Total duration: {duration}")
 
-    # Write output files
+def assert_same_columns(X_train: pd.DataFrame, X_other: pd.DataFrame, name: str):
+    if list(X_train.columns) != list(X_other.columns):
+        if set(X_train.columns) == set(X_other.columns):
+            X_other = X_other[X_train.columns]
+            return X_other
+        raise ValueError(
+            f"Feature columns mismatch between train and {name}.\n"
+            f"train cols={list(X_train.columns)}\n"
+            f"{name} cols={list(X_other.columns)}"
+        )
+    return X_other
+
+
+def get_model_from_submission(subm):
+    if hasattr(subm, "get_model"):
+        model = subm.get_model()
+        return model
+    if hasattr(subm, "Model"):
+        return subm.Model()
+    raise AttributeError("submission.py must define get_model() or a Model class")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=str, required=True)
+    parser.add_argument("--output-dir", type=str, required=True)
+    parser.add_argument("--submission-dir", type=str, required=True)
+    args = parser.parse_args()
+
+    data_dir = Path(args.data_dir)
+    output_dir = Path(args.output_dir)
+    submission_dir = Path(args.submission_dir)
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "metadata.json", "w+") as f:
-        json.dump(dict(train_time=train_time, test_time=test_time), f)
-    for eval_set in EVAL_SETS:
-        filepath = output_dir / f"{eval_set}_predictions.csv"
-        res[eval_set].to_csv(filepath, index=False)
-    print()
-    print("Ingestion Program finished. Moving on to scoring")
+
+    print("Ingestion started")
+    print("Data dir:", data_dir.resolve())
+    print("Submission dir:", submission_dir.resolve())
+    print("Output dir:", output_dir.resolve())
+
+    t0 = time.time()
+
+    X_train = load_features(data_dir, "train")
+    y_train = load_labels(data_dir, "train")
+
+    X_test = load_features(data_dir, "test")
+    X_private = load_features(data_dir, "private_test")
+
+    X_test = assert_same_columns(X_train, X_test, "test")
+    X_private = assert_same_columns(X_train, X_private, "private_test")
+
+    print("Shapes:")
+    print("  train:", X_train.shape, "labels:", y_train.shape)
+    print("  test:", X_test.shape)
+    print("  private_test:", X_private.shape)
+
+    # Load submission and model
+    subm = import_submission(submission_dir)
+    model = get_model_from_submission(subm)
+
+    # Fit
+    print("Fitting model...")
+    model.fit(X_train, y_train)
+
+    # Predict
+    print("Predicting test...")
+    pred_test = model.predict(X_test)
+    print("Predicting private_test...")
+    pred_private = model.predict(X_private)
+
+    pred_test = np.asarray(pred_test)
+    pred_private = np.asarray(pred_private)
+
+    if pred_test.shape[0] != X_test.shape[0]:
+        raise ValueError("Wrong number of predictions for test set.")
+    if pred_private.shape[0] != X_private.shape[0]:
+        raise ValueError("Wrong number of predictions for private_test set.")
+
+    # Save
+    save_predictions(pred_test, output_dir / "test_predictions.csv")
+    save_predictions(pred_private, output_dir / "private_test_predictions.csv")
+
+    elapsed = time.time() - t0
+    print(f"Done. Runtime: {elapsed:.2f}s")
+    print("Wrote files:")
+    print("  test_predictions.csv")
+    print("  private_test_predictions.csv")
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Ingestion program for codabench"
-    )
-    parser.add_argument(
-        "--data-dir",
-        type=str,
-        default="/app/input_data",
-        help="",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="/app/output",
-        help="",
-    )
-    parser.add_argument(
-        "--submission-dir",
-        type=str,
-        default="/app/ingested_program",
-        help="",
-    )
-
-    args = parser.parse_args()
-    sys.path.append(args.submission_dir)
-    sys.path.append(Path(__file__).parent.resolve())
-
-    main(Path(args.data_dir), Path(args.output_dir))
+    main()
