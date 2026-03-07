@@ -2,7 +2,7 @@
 
 ## Authors
 - Gabriel Bastianello  
-- Bia Evelbauer  
+- Beatriz Evelbauer  
 - Yasmine Slimen  
 
 This challenge was created as part of the DataCamp group project.
