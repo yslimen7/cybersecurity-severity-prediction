@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from sklearn.metrics import f1_score
 
 import pandas as pd
 
@@ -9,8 +10,9 @@ EVAL_SETS = ["test", "private_test"]
 def compute_accuracy(predictions, targets):
     # Make sure there is no NaN, as pandas ignores them in mean computation
     predictions = predictions.fillna(-10).values
-    # Return mean of correct predictions
-    return (predictions == targets.values).mean()
+    # return f1 score
+    score = f1_score(targets, predictions, average="macro")
+    return score
 
 
 def main(reference_dir, prediction_dir, output_dir):
