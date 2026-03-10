@@ -7,16 +7,70 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import zipfile
+
 
 def import_submission(submission_dir: Path):
-    submission_path = submission_dir / "submission.py"
-    if not submission_path.exists():
-        raise FileNotFoundError(f"submission.py not found in: {submission_dir}")
+    # 1) Cas simple : submission.py déjà extrait
+    direct_candidates = [
+        submission_dir / "submission.py",
+        submission_dir / "solution" / "submission.py",
+    ]
+    for path in direct_candidates:
+        if path.exists():
+            submission_path = path
+            spec = importlib.util.spec_from_file_location("submission", str(submission_path))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # type: ignore
+            return module
 
-    spec = importlib.util.spec_from_file_location("submission", str(submission_path))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore
-    return module
+    # 2) Chercher un zip dans le dossier de soumission
+    zip_files = list(submission_dir.glob("*.zip"))
+    if len(zip_files) == 1:
+        zip_path = zip_files[0]
+        extract_dir = submission_dir / "_unzipped_submission"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
+
+        extracted_candidates = [
+            extract_dir / "submission.py",
+            extract_dir / "solution" / "submission.py",
+        ]
+
+        # recherche récursive de secours
+        recursive_matches = list(extract_dir.rglob("submission.py"))
+        for path in extracted_candidates:
+            if path.exists():
+                submission_path = path
+                break
+        else:
+            if len(recursive_matches) == 1:
+                submission_path = recursive_matches[0]
+            elif len(recursive_matches) > 1:
+                raise FileNotFoundError(
+                    "Multiple submission.py files found after unzip: "
+                    + ", ".join(str(p) for p in recursive_matches)
+                )
+            else:
+                extracted_files = [str(p) for p in extract_dir.rglob("*") if p.is_file()]
+                raise FileNotFoundError(
+                    "No submission.py found after unzipping submission. "
+                    f"Files found: {extracted_files}"
+                )
+
+        spec = importlib.util.spec_from_file_location("submission", str(submission_path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # type: ignore
+        return module
+
+    # 3) Debug utile si rien n'est trouvé
+    all_files = [str(p) for p in submission_dir.rglob("*") if p.is_file()]
+    raise FileNotFoundError(
+        "Could not find submission.py or a single zip file in submission directory. "
+        f"Files found in {submission_dir}: {all_files}"
+    )
 
 
 def load_features(data_dir: Path, split: str) -> pd.DataFrame:

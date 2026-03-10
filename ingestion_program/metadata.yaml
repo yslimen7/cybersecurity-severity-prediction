@@ -1,1 +1,7 @@
-command: python3 ingestion.py
+title: ingestion
+docker_image: codalab/codalab-legacy:py37
+command: >-
+  python3 ingestion.py
+  --data-dir /app/input_data
+  --output-dir /app/output
+  --submission-dir /app/ingested_program
