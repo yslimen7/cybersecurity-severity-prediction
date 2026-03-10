@@ -15,7 +15,7 @@ pages:
 
 tasks:
   - index: 0
-    name: Developement Task
+    name: Development Task
     description: 'Tune models with training data, test against examples contained in public test data'
     input_data: dev_phase/input_data/
     reference_data: dev_phase/reference_data/
@@ -25,14 +25,14 @@ tasks:
 solutions:
   - index: 0
     tasks:
-    - 0
-    path: solution/
+      - 0
+    path: solution/submission.py
 
 
 phases:
   - name: Development Phase
     description: 'Development phase: tune your models.'
-    start: 2026-03-21
+    start: 2026-03-01
     end: 2026-05-31
     tasks:
       - 0
