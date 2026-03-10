@@ -1,1 +1,7 @@
-command: python3 scoring.py
+title: scoring
+docker_image: codalab/codalab-legacy:py37
+command: >-
+  python3 scoring.py
+  --reference-dir /app/input/ref
+  --prediction-dir /app/input/res
+  --output-dir /app/output
